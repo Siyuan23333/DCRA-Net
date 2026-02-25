@@ -163,6 +163,7 @@ def main(config):
         split_json=config["split_json"],
         split="val",
         frames=config["n_frames"],
+        img_size=config["image_size"],
     )
 
     test_dataloader = torch.utils.data.DataLoader(

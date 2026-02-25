@@ -7,6 +7,7 @@ import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from torchvision import transforms
 from scipy.fft import fftshift, ifftshift, ifft2
 from src.transforms import ToKSpace
 
@@ -34,9 +35,11 @@ class PairedDataset(Dataset):
         split_json,
         split="train",
         frames=32,
+        img_size=None,
     ):
         super().__init__()
         self.frames = frames
+        self.img_size = img_size
 
         with open(split_json, "r") as f:
             split_data = json.load(f)
@@ -83,6 +86,22 @@ class PairedDataset(Dataset):
         # CutFrames
         combined_image = combined_image[: self.frames]
         mask = mask[: self.frames]
+
+        # Optional Resize + CenterCrop
+        if self.img_size is not None:
+            img_real = torch.view_as_real(combined_image)  # [T, H, W, 2]
+            img_real = img_real.permute(3, 0, 1, 2)        # [2, T, H, W]
+            img_real = transforms.Resize(self.img_size, antialias=True)(img_real)
+            img_real = transforms.CenterCrop(self.img_size)(img_real)
+            combined_image = torch.view_as_complex(
+                img_real.permute(1, 2, 3, 0).contiguous()
+            )
+
+            mask = transforms.Resize(
+                self.img_size,
+                interpolation=transforms.InterpolationMode.NEAREST,
+            )(mask)
+            mask = transforms.CenterCrop(self.img_size)(mask)
 
         # Convert combined image to k-space
         kspace = ToKSpace()(combined_image)  # [T, H', W'] complex
