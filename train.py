@@ -204,7 +204,6 @@ def main(config):
         split_json=config["split_json"],
         split="train",
         frames=config["n_frames"],
-        img_size=config["image_size"],
     )
     val_dataset = PairedDataset(
         ksp_dir=config["ksp_dir"],
@@ -213,7 +212,6 @@ def main(config):
         split_json=config["split_json"],
         split="val",
         frames=config["n_frames"],
-        img_size=config["image_size"],
     )
 
     print(f"Train samples: {len(train_dataset)}")

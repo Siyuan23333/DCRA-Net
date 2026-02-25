@@ -1,5 +1,5 @@
-torch==2.0.1
-torchvision==0.15.2
+torch==2.4.1
+torchvision==0.19.1
 transformers==4.46.3
 diffusers[torch]==0.31.0
 matplotlib
@@ -12,4 +12,4 @@ scikit-learn
 piq==0.8.0
 video-diffusion-pytorch==0.6.3
 rotary-embedding-torch==0.3.5
-numpy<2.0
+numpy>=2.0
