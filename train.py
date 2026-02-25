@@ -2,7 +2,6 @@
 #
 # Copyright (c) 2024 Denis Prokopenko
 
-from torchvision import transforms
 import torch
 from torch.optim import Adam
 import argparse
@@ -17,18 +16,13 @@ from src.datasets import PairedDataset
 from src.metrics import loss_func
 from src.dcranet import DCRANet
 from src.transforms import (
-    CutFrames,
     ToTime,
     ToFrequency,
-    ToTensor,
     ToImage,
-    ToKSpace,
     ToReal,
-    ToComplex,
     AddChannel,
     tensor2complex,
 )
-from sklearn.model_selection import train_test_split
 from src.utils import dump_yml
 from src.utils import plot_pred_orig
 from torchvision.utils import save_image
@@ -93,8 +87,30 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--data_dir",
-        help="data directory",
+        "--ksp_dir",
+        help="directory containing k-space .npy files",
+        type=str,
+        default=None,
+    )
+
+    parser.add_argument(
+        "--mask_dir",
+        help="directory containing precomputed mask .npy files",
+        type=str,
+        default=None,
+    )
+
+    parser.add_argument(
+        "--sense_dir",
+        help="directory containing sensitivity map .npy files",
+        type=str,
+        default=None,
+    )
+
+    parser.add_argument(
+        "--split_json",
+        help="path to JSON file with train/val split",
+        type=str,
         default=None,
     )
 
@@ -106,27 +122,11 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--mask_dir",
-        help="path to save results",
-        type=str,
-        default=None,
-    )
-
-    parser.add_argument(
         "--tensorboard_dir",
         help="path to save data for tensorboard",
         type=str,
         default="./tensorboard_data",
     )
-    parser.add_argument("--acceleration", help="acceleration rate", default=8, type=int)
-
-    parser.add_argument(
-        "--pattern", help="undersampling attern", default="lattice", type=str
-    )
-
-    parser.add_argument("--mask_idx", help="vista mask index", default=None, type=str)
-
-    parser.add_argument("--mask_ucoef", help="vista mask index", default=None, type=str)
 
     parser.add_argument("--seed", help="random seed", default=42, type=int)
 
@@ -197,60 +197,27 @@ def main(config):
     assert config["representation_time"] in ["time", "frequency"]
     assert config["representation_space"] == "image"
 
-    transform = transforms.Compose(
-        [
-            ToTensor(),
-            CutFrames(frames=config["n_frames"]),
-            ToImage(),
-            ToReal(),
-            transforms.Resize(config["image_size"], antialias=True),
-            transforms.CenterCrop(config["image_size"]),
-            ToComplex(),
-            ToKSpace(),
-        ]
-    )
-
     train_dataset = PairedDataset(
-        data_dir=config["data_dir"],
-        pattern=config["pattern"],
-        transform=transform,
+        ksp_dir=config["ksp_dir"],
+        mask_dir=config["mask_dir"],
+        sense_dir=config["sense_dir"],
+        split_json=config["split_json"],
+        split="train",
         frames=config["n_frames"],
         img_size=config["image_size"],
-        acceleration=config["acceleration"],
-        u_coef=config["mask_ucoef"],
-        mask_dir=config["mask_dir"],
     )
     val_dataset = PairedDataset(
-        data_dir=config["data_dir"],
-        transform=transform,
-        pattern=config["pattern"],
+        ksp_dir=config["ksp_dir"],
+        mask_dir=config["mask_dir"],
+        sense_dir=config["sense_dir"],
+        split_json=config["split_json"],
+        split="val",
         frames=config["n_frames"],
         img_size=config["image_size"],
-        acceleration=config["acceleration"],
-        u_coef=config["mask_ucoef"],
-        mask_id=1,
-        mask_dir=config["mask_dir"],
     )
 
-    files = train_dataset.files
-    patient_ids = set([os.path.basename(file).split("_")[0] for file in files])
-
-    train_ids, val_ids = train_test_split(
-        sorted(list(patient_ids)), test_size=0.1, random_state=42
-    )
-
-    train_dataset.files = []
-    val_dataset.files = []
-    for file in files:
-        if os.path.basename(file).split("_")[0] in train_ids:
-            train_dataset.files.append(file)
-        else:
-            val_dataset.files.append(file)
-
-    print(sorted(train_ids))
-    print(len(train_dataset))
-    print(sorted(val_ids))
-    print(len(val_dataset))
+    print(f"Train samples: {len(train_dataset)}")
+    print(f"Val samples: {len(val_dataset)}")
 
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,

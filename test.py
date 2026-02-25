@@ -2,7 +2,6 @@
 #
 # Copyright (c) 2024 Denis Prokopenko
 
-from torchvision import transforms
 import torch
 import argparse
 import os
@@ -14,14 +13,9 @@ from src.datasets import PairedDataset
 from src.metrics import loss_func
 from src.dcranet import DCRANet
 from src.transforms import (
-    CutFrames,
     ToTime,
-    ToFrequency,
-    ToTensor,
     ToImage,
-    ToKSpace,
     ToReal,
-    ToComplex,
     AddChannel,
     tensor2complex,
 )
@@ -79,8 +73,30 @@ def parse_args():
     parser.add_argument("--batch_size", help="batch size", default=1, type=int)
 
     parser.add_argument(
-        "--data_dir",
-        help="data directory",
+        "--ksp_dir",
+        help="directory containing k-space .npy files",
+        type=str,
+        default=None,
+    )
+
+    parser.add_argument(
+        "--mask_dir",
+        help="directory containing precomputed mask .npy files",
+        type=str,
+        default=None,
+    )
+
+    parser.add_argument(
+        "--sense_dir",
+        help="directory containing sensitivity map .npy files",
+        type=str,
+        default=None,
+    )
+
+    parser.add_argument(
+        "--split_json",
+        help="path to JSON file with train/val split",
+        type=str,
         default=None,
     )
 
@@ -90,23 +106,6 @@ def parse_args():
         type=str,
         default=None,
     )
-
-    parser.add_argument(
-        "--mask_dir",
-        help="path to save results",
-        type=str,
-        default=None,
-    )
-
-    parser.add_argument("--acceleration", help="acceleration rate", default=8, type=int)
-
-    parser.add_argument(
-        "--pattern", help="undersampling attern", default="lattice", type=str
-    )
-
-    parser.add_argument("--mask_idx", help="vista mask index", default=None, type=str)
-
-    parser.add_argument("--mask_ucoef", help="vista mask index", default=None, type=str)
 
     parser.add_argument("--seed", help="random seed", default=42, type=int)
 
@@ -157,29 +156,14 @@ def main(config):
     assert config["representation_time"] in ["time", "frequency"]
     assert config["representation_space"] == "image"
 
-    transform = transforms.Compose(
-        [
-            ToTensor(),
-            CutFrames(frames=config["n_frames"]),
-            ToImage(),
-            ToReal(),
-            transforms.Resize(config["image_size"], antialias=True),
-            transforms.CenterCrop(config["image_size"]),
-            ToComplex(),
-            ToKSpace(),
-        ]
-    )
-
     test_dataset = PairedDataset(
-        data_dir=config["data_dir"],
-        transform=transform,
-        pattern=config["pattern"],
+        ksp_dir=config["ksp_dir"],
+        mask_dir=config["mask_dir"],
+        sense_dir=config["sense_dir"],
+        split_json=config["split_json"],
+        split="val",
         frames=config["n_frames"],
         img_size=config["image_size"],
-        acceleration=config["acceleration"],
-        u_coef=config["mask_ucoef"],
-        mask_id=1,
-        mask_dir=config["mask_dir"],
     )
 
     test_dataloader = torch.utils.data.DataLoader(
