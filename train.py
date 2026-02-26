@@ -286,6 +286,7 @@ def main(config):
         val_losses_masked[k] = []
 
     for epoch in range(config["start_epoch"], config["n_epochs"]):
+        model.train()
         for step, batch in tqdm(
             enumerate(train_dataloader),
             disable=not config["verbose"],
@@ -329,6 +330,7 @@ def main(config):
             f"Loss_{config['loss_type']}/Train/Epoch", current_mean, epoch
         )
 
+        model.eval()
         with torch.inference_mode():
             for v_iter, v_batch in tqdm(
                 enumerate(val_dataloader),
@@ -432,14 +434,24 @@ def main(config):
                         scale_each=True,
                     )
 
+        # Log epoch-level train loss
+        train_offset = -len(train_dataloader)
+        train_mean = sum(losses[train_offset:]) / len(train_dataloader)
+        print(f"Epoch {epoch}: train_{config['loss_type']}={train_mean:.6f}", end="")
+
+        # Log epoch-level validation metrics
         for k in val_losses.keys():
             offset = -len(val_dataset)
             current_mean = sum(val_losses[k][offset:]) / len(val_dataset)
             writer.add_scalar(f"{k.upper()}_Loss/Validation/Epoch", current_mean, epoch)
-            current_mean = sum(val_losses_masked[k][offset:]) / len(val_dataset)
+            current_mean_masked = sum(val_losses_masked[k][offset:]) / len(val_dataset)
             writer.add_scalar(
-                f"{k.upper()}_Loss_Masked/Validation/Epoch", current_mean, epoch
+                f"{k.upper()}_Loss_Masked/Validation/Epoch", current_mean_masked, epoch
             )
+            print(f"  val_{k}={current_mean:.6f}", end="")
+
+        print()  # newline
+        writer.flush()
 
         data = {
             "step": None,
