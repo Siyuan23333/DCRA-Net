@@ -3,6 +3,7 @@
 # Copyright (c) 2024 Denis Prokopenko
 
 import torch
+import numpy as np
 import argparse
 import os
 from tqdm.auto import tqdm
@@ -246,17 +247,13 @@ def main(config):
                 )
 
             for b_idx in range(test_pred.size(0)):
-                data_to_save = {
-                    "input": test_undersampled[b_idx, 0],
-                    "target": test_target[b_idx, 0],
-                    "prediction": test_pred[b_idx, 0],
-                }
-                torch.save(
-                    data_to_save,
-                    os.path.join(
-                        predictions_dir,
-                        f"{test_iter * config['batch_size'] +  b_idx:04d}.pt",
-                    ),
+                # (T, H, W) complex -> (T, 2, H, W) real-imag
+                pred = test_pred[b_idx, 0].cpu()
+                pred_ri = torch.stack([pred.real, pred.imag], dim=1).numpy()
+                sample_idx = test_iter * config["batch_size"] + b_idx
+                np.save(
+                    os.path.join(predictions_dir, f"{sample_idx:04d}.npy"),
+                    pred_ri,
                 )
     torch.save(
         {"test_losses": test_losses, "test_losses_masked": test_losses_masked},
