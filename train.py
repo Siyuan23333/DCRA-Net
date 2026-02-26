@@ -153,6 +153,13 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--log_every",
+        help="log training loss and grad_norm to wandb every N steps",
+        default=10,
+        type=int,
+    )
+
+    parser.add_argument(
         "--verbose",
         help="verbose mode",
         default=False,
@@ -320,10 +327,11 @@ def main(config):
             optimizer.step()
 
             losses.append(loss.item())
-            wandb.log({
-                "train/loss": losses[-1],
-                "train/grad_norm": grad_norm.item(),
-            })
+            if (step + 1) % config["log_every"] == 0:
+                wandb.log({
+                    "train/loss": losses[-1],
+                    "train/grad_norm": grad_norm.item(),
+                })
 
         offset = -len(train_dataloader)
         current_mean = sum(losses[offset:]) / len(train_dataloader)
