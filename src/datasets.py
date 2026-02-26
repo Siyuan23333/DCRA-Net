@@ -112,4 +112,4 @@ class PairedDataset(Dataset):
         target = target / target_delta
         kspace = kspace / target_delta
 
-        return (kspace, mask), (target,)
+        return (kspace, mask), (target, target_delta)

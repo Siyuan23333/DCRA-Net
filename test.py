@@ -2,21 +2,23 @@
 #
 # Copyright (c) 2024 Denis Prokopenko
 
-import torch
 import argparse
 import os
-from tqdm.auto import tqdm
 import sys
+
+import numpy as np
+import torch
+from tqdm.auto import tqdm
 
 sys.path.append(os.path.abspath("."))
 from src.datasets import PairedDataset
-from src.metrics import loss_func
 from src.dcranet import DCRANet
+from src.metrics import loss_func
 from src.transforms import (
-    ToTime,
+    AddChannel,
     ToImage,
     ToReal,
-    AddChannel,
+    ToTime,
     tensor2complex,
 )
 
@@ -153,6 +155,9 @@ def main(config):
     predictions_dir = os.path.join(inference_dir, "predictions")
     os.makedirs(predictions_dir, exist_ok=True)
 
+    targets_dir = os.path.join(inference_dir, "targets")
+    os.makedirs(targets_dir, exist_ok=True)
+
     assert config["representation_time"] in ["time", "frequency"]
     assert config["representation_space"] == "image"
 
@@ -217,6 +222,7 @@ def main(config):
             test_kspace, test_mask = [item.cuda() for item in test_batch[0]][:]
 
             test_target = test_batch[1][0].cuda()
+            target_delta = test_batch[1][1].cuda()  # [N] normalization factor
             test_target = ToReal(batched=True)(test_target)
 
             test_undersampled = test_kspace * test_mask
@@ -245,19 +251,21 @@ def main(config):
                     .cpu()
                 )
 
+            # Denormalize and save magnitude as .npy
+            scale = target_delta.view(-1, 1, 1, 1, 1)  # [N, 1, 1, 1, 1]
+            test_pred_denorm = test_pred * scale
+            test_target_denorm = test_target * scale
+
             for b_idx in range(test_pred.size(0)):
-                data_to_save = {
-                    "input": test_undersampled[b_idx, 0],
-                    "target": test_target[b_idx, 0],
-                    "prediction": test_pred[b_idx, 0],
-                }
-                torch.save(
-                    data_to_save,
-                    os.path.join(
-                        predictions_dir,
-                        f"{test_iter * config['batch_size'] +  b_idx:04d}.pt",
-                    ),
-                )
+                sample_id = test_iter * config["batch_size"] + b_idx
+                fname = f"{sample_id:04d}.npy"
+
+                pred_mag = test_pred_denorm[b_idx, 0].abs().cpu().float().numpy()
+                np.save(os.path.join(predictions_dir, fname), pred_mag)
+
+                tgt_mag = test_target_denorm[b_idx, 0].abs().cpu().float().numpy()
+                np.save(os.path.join(targets_dir, fname), tgt_mag)
+
     torch.save(
         {"test_losses": test_losses, "test_losses_masked": test_losses_masked},
         os.path.join(inference_dir, "test_losses.pt"),
