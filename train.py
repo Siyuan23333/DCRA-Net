@@ -7,7 +7,7 @@ from torch.optim import Adam
 import argparse
 import os
 from tqdm.auto import tqdm
-from torch.utils.tensorboard import SummaryWriter
+import wandb
 
 import sys
 
@@ -122,10 +122,10 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--tensorboard_dir",
-        help="path to save data for tensorboard",
+        "--wandb_project",
+        help="wandb project name",
         type=str,
-        default="./tensorboard_data",
+        default="DCRA-Net",
     )
 
     parser.add_argument("--seed", help="random seed", default=42, type=int)
@@ -262,10 +262,10 @@ def main(config):
         model.load_state_dict(data["model"])
         optimizer.load_state_dict(data["opt"])
 
-    writer = SummaryWriter(
-        log_dir=os.path.join(
-            config["tensorboard_dir"], os.path.basename(config["save_dir"])
-        )
+    wandb.init(
+        project=config["wandb_project"],
+        name=os.path.basename(config["save_dir"]),
+        config=config,
     )
 
     training_losses = {
@@ -315,20 +315,17 @@ def main(config):
             loss = criterion(input=output, target=target)
 
             loss.backward()
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf"))
             optimizer.step()
 
             losses.append(loss.item())
-            writer.add_scalar(
-                f"Loss_{config['loss_type']}/Train/Iteration",
-                losses[-1],
-                step + epoch * len(train_dataloader),
-            )
+            wandb.log({
+                "train/loss": losses[-1],
+                "train/grad_norm": grad_norm.item(),
+            })
 
         offset = -len(train_dataloader)
         current_mean = sum(losses[offset:]) / len(train_dataloader)
-        writer.add_scalar(
-            f"Loss_{config['loss_type']}/Train/Epoch", current_mean, epoch
-        )
 
         model.eval()
         with torch.inference_mode():
@@ -371,22 +368,6 @@ def main(config):
                         .mean(dim=(1, 2, 3, 4))
                         .cpu()
                     )
-
-                    for i in range(v_target.size(0), 0, -1):
-                        writer.add_scalar(
-                            f"{k.upper()}_Loss/Validation/Samples",
-                            val_losses[k][-i],
-                            epoch * len(val_dataset)
-                            + (v_iter + 1) * config["batch_size"]
-                            - i,
-                        )
-                        writer.add_scalar(
-                            f"{k.upper()}_Loss_Masked/Validation/Samples",
-                            val_losses_masked[k][-i],
-                            epoch * len(val_dataset)
-                            + (v_iter + 1) * config["batch_size"]
-                            - i,
-                        )
 
                 if v_iter == 0:
                     n_samples = 4
@@ -435,24 +416,22 @@ def main(config):
                         scale_each=True,
                     )
 
-        # Log epoch-level train loss
+        # Log epoch-level metrics
         train_offset = -len(train_dataloader)
         train_mean = sum(losses[train_offset:]) / len(train_dataloader)
         print(f"Epoch {epoch}: train_{config['loss_type']}={train_mean:.6f}", end="")
 
-        # Log epoch-level validation metrics
+        epoch_log = {"epoch": epoch, "train/epoch_loss": train_mean}
         for k in val_losses.keys():
             offset = -len(val_dataset)
             current_mean = sum(val_losses[k][offset:]) / len(val_dataset)
-            writer.add_scalar(f"{k.upper()}_Loss/Validation/Epoch", current_mean, epoch)
             current_mean_masked = sum(val_losses_masked[k][offset:]) / len(val_dataset)
-            writer.add_scalar(
-                f"{k.upper()}_Loss_Masked/Validation/Epoch", current_mean_masked, epoch
-            )
+            epoch_log[f"val/{k}"] = current_mean
+            epoch_log[f"val/{k}_masked"] = current_mean_masked
             print(f"  val_{k}={current_mean:.6f}", end="")
 
         print()  # newline
-        writer.flush()
+        wandb.log(epoch_log)
 
         data = {
             "step": None,
@@ -462,10 +441,7 @@ def main(config):
         }
         torch.save(data, os.path.join(checkpoints_dir, f"checkpoint-{epoch:02d}.pt"))
 
-        # --- PARAM HASH (quick cross-epoch comparison) ---
-        param_hash = sum(p.data.sum().item() for p in model.parameters())
-        print(f"Epoch {epoch}: param_hash={param_hash:.6f}")
-
+    wandb.finish()
     print("Done")
 
 
