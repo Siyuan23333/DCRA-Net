@@ -310,13 +310,49 @@ def main(config):
                 print(undersampled.abs().max(), target.abs().max())
                 print(undersampled.size(), target.size())
 
-            loss = criterion(
-                input=model(undersampled),
-                target=target,
-            )
+            output = model(undersampled)
+            loss = criterion(input=output, target=target)
+
+            # --- GRAD DIAGNOSTIC (first step of each epoch) ---
+            if step == 0:
+                print(f"\n=== GRAD DIAGNOSTIC (epoch {epoch}, step 0) ===")
+                print(f"inference_mode: {torch.is_inference_mode_enabled()}")
+                print(f"loss: {loss.item():.6f}, requires_grad: {loss.requires_grad}")
+                print(f"output dtype: {output.dtype}, target dtype: {target.dtype}")
+                print(f"output shape: {output.shape}, target shape: {target.shape}")
 
             loss.backward()
+
+            if step == 0:
+                total_params = 0
+                grad_none = 0
+                grad_zero = 0
+                grad_norm_sq = 0.0
+                for name, p in model.named_parameters():
+                    if not p.requires_grad:
+                        continue
+                    total_params += 1
+                    if p.grad is None:
+                        grad_none += 1
+                    elif p.grad.abs().sum().item() == 0:
+                        grad_zero += 1
+                    else:
+                        grad_norm_sq += p.grad.norm().item() ** 2
+                print(f"trainable params: {total_params}, grad=None: {grad_none}, grad=0: {grad_zero}")
+                print(f"total grad norm: {grad_norm_sq ** 0.5:.6f}")
+                # Snapshot one param before optimizer.step()
+                ref_name = next(n for n, p in model.named_parameters() if p.requires_grad)
+                ref_before = dict(model.named_parameters())[ref_name].data.clone()
+
             optimizer.step()
+
+            if step == 0:
+                ref_after = dict(model.named_parameters())[ref_name].data
+                diff = (ref_before - ref_after).abs().sum().item()
+                print(f"param '{ref_name}' changed: {diff > 0} (diff={diff:.10f})")
+                print(f"=== END DIAGNOSTIC ===\n")
+            # --- END GRAD DIAGNOSTIC ---
+
             losses.append(loss.item())
             writer.add_scalar(
                 f"Loss_{config['loss_type']}/Train/Iteration",
@@ -460,6 +496,10 @@ def main(config):
             "opt": optimizer.state_dict(),
         }
         torch.save(data, os.path.join(checkpoints_dir, f"checkpoint-{epoch:02d}.pt"))
+
+        # --- PARAM HASH (quick cross-epoch comparison) ---
+        param_hash = sum(p.data.sum().item() for p in model.parameters())
+        print(f"Epoch {epoch}: param_hash={param_hash:.6f}")
 
     print("Done")
 
