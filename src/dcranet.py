@@ -247,6 +247,8 @@ class DCRANet(nn.Module):
         assert x.size(1) == 1, f"Expected 1channel k-space, got {x.size()}"
         if k_mask is None:
             k_mask = (x.abs().sum(dim=-1, keepdim=True) > 0).type(torch.float)
+        if k_mask.dim() == 4:
+            k_mask = k_mask.unsqueeze(1)  # (N, T, H, W) -> (N, 1, T, H, W)
 
         # (N, 1, D, H, W) ->  (N, D, H, W, 2) ->  (N, 2, D, H, W)
         image_input = ToImage(norm=self.norm)(x)
