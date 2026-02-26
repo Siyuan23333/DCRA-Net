@@ -3,6 +3,7 @@
 # Copyright (c) 2024 Denis Prokopenko
 
 import torch
+import torch.nn.functional as F
 import numpy as np
 import argparse
 import os
@@ -119,6 +120,13 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--full_resolution",
+        help="run inference at full spatial resolution (skip resize/crop)",
+        default=False,
+        action="store_true",
+    )
+
+    parser.add_argument(
         "--verbose",
         help="verbose mode",
         default=False,
@@ -157,6 +165,8 @@ def main(config):
     assert config["representation_time"] in ["time", "frequency"]
     assert config["representation_space"] == "image"
 
+    img_size = None if config["full_resolution"] else config["image_size"]
+
     test_dataset = PairedDataset(
         ksp_dir=config["ksp_dir"],
         mask_dir=config["mask_dir"],
@@ -164,7 +174,7 @@ def main(config):
         split_json=config["split_json"],
         split="val",
         frames=config["n_frames"],
-        img_size=config["image_size"],
+        img_size=img_size,
     )
 
     test_dataloader = torch.utils.data.DataLoader(
@@ -223,7 +233,19 @@ def main(config):
             test_undersampled = test_kspace * test_mask
             test_undersampled = AddChannel(dim=1)(test_undersampled)
 
+            # Pad spatial dims to multiples of 8 for the UNet
+            _, _, _, H_orig, W_orig = test_undersampled.shape
+            pad_h = (8 - H_orig % 8) % 8
+            pad_w = (8 - W_orig % 8) % 8
+            if pad_h or pad_w:
+                test_undersampled = F.pad(test_undersampled, (0, pad_w, 0, pad_h))
+
             test_pred = model(test_undersampled)
+
+            # Crop back to original spatial size
+            if pad_h or pad_w:
+                test_pred = test_pred[:, :, :, :H_orig, :W_orig]
+                test_undersampled = test_undersampled[:, :, :, :H_orig, :W_orig]
 
             test_undersampled = tensor2complex(test_undersampled)
             test_pred = tensor2complex(test_pred)
