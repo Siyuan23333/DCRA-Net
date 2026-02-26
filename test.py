@@ -222,7 +222,7 @@ def main(config):
             test_undersampled = test_kspace * test_mask
             test_undersampled = AddChannel(dim=1)(test_undersampled)
 
-            test_pred = model(test_undersampled)
+            test_pred = model(test_undersampled, k_mask=test_mask)
 
             test_undersampled = tensor2complex(test_undersampled)
             test_pred = tensor2complex(test_pred)

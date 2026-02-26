@@ -4,6 +4,7 @@
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 from functools import partial
 from rotary_embedding_torch import RotaryEmbedding
 from src.dataconsistency import DataConsistencyKSpace
@@ -238,6 +239,8 @@ class DCRANet(nn.Module):
         self.representation_time = representation_time
         self.dc = DataConsistencyKSpace(dc_mode=dc_mode)
         self.norm = norm_fft
+        # Spatial dims must be divisible by 2^(num_downsample_levels)
+        self._spatial_divisor = 2 ** (len(dim_mults) - 1)
 
     def forward(self, x: torch.Tensor, k_mask: torch.Tensor = None) -> torch.Tensor:
         # N, 1, D, H, 1
@@ -258,7 +261,20 @@ class DCRANet(nn.Module):
 
         image_input = torch.view_as_real(image_input.squeeze(dim=1)).type(torch.float)
         image_input = image_input.permute(0, 4, 1, 2, 3)
+
+        # Pad spatial dims to be divisible by the required factor
+        _, _, _, H_orig, W_orig = image_input.shape
+        d = self._spatial_divisor
+        pad_h = (d - H_orig % d) % d
+        pad_w = (d - W_orig % d) % d
+        if pad_h > 0 or pad_w > 0:
+            image_input = F.pad(image_input, (0, pad_w, 0, pad_h), mode="reflect")
+
         image_prediction = self.unet3d(image_input)
+
+        # Crop back to original spatial size
+        if pad_h > 0 or pad_w > 0:
+            image_prediction = image_prediction[..., :H_orig, :W_orig]
 
         # (N, 2, D,  H, W)-> (N, D, H, W, 2) -> complex (N, D, H, W)
         # -> complex (N, 1, D, H, W)
