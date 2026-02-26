@@ -257,8 +257,8 @@ def main(config):
             test_target_denorm = test_target * scale
 
             for b_idx in range(test_pred.size(0)):
-                sample_id = test_iter * config["batch_size"] + b_idx
-                fname = f"{sample_id:04d}.npy"
+                dataset_idx = test_iter * config["batch_size"] + b_idx
+                fname = f"{test_dataset.filenames[dataset_idx]}.npy"
 
                 pred_mag = test_pred_denorm[b_idx, 0].abs().cpu().float().numpy()
                 np.save(os.path.join(predictions_dir, fname), pred_mag)

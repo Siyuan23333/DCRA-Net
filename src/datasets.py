@@ -44,10 +44,10 @@ class PairedDataset(Dataset):
         with open(split_json, "r") as f:
             split_data = json.load(f)
 
-        filenames = split_data[split]
-        self.ksp_files = [os.path.join(ksp_dir, f"{name}.npy") for name in filenames]
-        self.mask_files = [os.path.join(mask_dir, f"{name}.npy") for name in filenames]
-        self.sense_files = [os.path.join(sense_dir, f"{name}.npy") for name in filenames]
+        self.filenames = split_data[split]
+        self.ksp_files = [os.path.join(ksp_dir, f"{name}.npy") for name in self.filenames]
+        self.mask_files = [os.path.join(mask_dir, f"{name}.npy") for name in self.filenames]
+        self.sense_files = [os.path.join(sense_dir, f"{name}.npy") for name in self.filenames]
 
     def __len__(self):
         return len(self.ksp_files)
