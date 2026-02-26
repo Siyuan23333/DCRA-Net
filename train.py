@@ -266,7 +266,7 @@ def main(config):
         project=config["wandb_project"],
         name=os.path.basename(config["save_dir"]),
         config=config,
-        mode="offline",
+        mode="online",
     )
 
     training_losses = {
