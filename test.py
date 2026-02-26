@@ -251,8 +251,9 @@ def main(config):
                 pred = test_pred[b_idx, 0].cpu()
                 pred_ri = torch.stack([pred.real, pred.imag], dim=1).numpy()
                 sample_idx = test_iter * config["batch_size"] + b_idx
+                fname = os.path.basename(test_dataset.ksp_files[sample_idx])
                 np.save(
-                    os.path.join(predictions_dir, f"{sample_idx:04d}.npy"),
+                    os.path.join(predictions_dir, fname),
                     pred_ri,
                 )
     torch.save(
