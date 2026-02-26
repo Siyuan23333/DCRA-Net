@@ -125,7 +125,7 @@ def parse_args():
         "--wandb_project",
         help="wandb project name",
         type=str,
-        default="DCRA-Net",
+        default="dcra",
     )
 
     parser.add_argument("--seed", help="random seed", default=42, type=int)
