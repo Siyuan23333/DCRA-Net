@@ -239,10 +239,11 @@ class DCRANet(nn.Module):
         self.dc = DataConsistencyKSpace(dc_mode=dc_mode)
         self.norm = norm_fft
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, k_mask: torch.Tensor = None) -> torch.Tensor:
         # N, 1, D, H, 1
         assert x.size(1) == 1, f"Expected 1channel k-space, got {x.size()}"
-        k_mask = (x.abs().sum(dim=-1, keepdim=True) > 0).type(torch.float)
+        if k_mask is None:
+            k_mask = (x.abs().sum(dim=-1, keepdim=True) > 0).type(torch.float)
 
         # (N, 1, D, H, W) ->  (N, D, H, W, 2) ->  (N, 2, D, H, W)
         image_input = ToImage(norm=self.norm)(x)
