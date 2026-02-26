@@ -8,6 +8,7 @@ import os
 from glob import glob
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from piq import ssim
 
@@ -17,10 +18,10 @@ def parse_args():
         description="Compute per-sample metrics and visualize predictions"
     )
     parser.add_argument(
-        "--predictions_dir",
+        "--inference_dir",
         required=True,
         type=str,
-        help="Directory containing .pt prediction files from test.py",
+        help="Inference directory containing predictions/ and targets/ subdirectories",
     )
     parser.add_argument(
         "--n_vis",
@@ -38,54 +39,57 @@ def parse_args():
 
 
 def compute_nmse(prediction, target):
-    """NMSE between two complex [T, H, W] tensors."""
-    error = (prediction - target).abs().pow(2).sum()
-    norm = target.abs().pow(2).sum()
+    """NMSE between two real [T, H, W] magnitude tensors."""
+    error = (prediction - target).pow(2).sum()
+    norm = target.pow(2).sum()
     return (error / norm).item()
 
 
 def compute_psnr(prediction, target):
-    """PSNR between two complex [T, H, W] tensors (magnitude-based)."""
-    max_val = max(prediction.abs().max(), target.abs().max())
-    mse = (prediction - target).abs().pow(2).mean()
+    """PSNR between two real [T, H, W] magnitude tensors."""
+    max_val = max(prediction.max(), target.max())
+    mse = (prediction - target).pow(2).mean()
     eps = torch.finfo(mse.dtype).eps
     return (20.0 * torch.log10(max_val) - 10.0 * torch.log10(mse + eps)).item()
 
 
 def compute_ssim(prediction, target):
-    """Mean SSIM across frames for two complex [T, H, W] tensors."""
-    pred_mag = prediction.abs().unsqueeze(1)  # [T, 1, H, W]
-    tgt_mag = target.abs().unsqueeze(1)  # [T, 1, H, W]
-    max_val = max(pred_mag.max(), tgt_mag.max())
-    return ssim(pred_mag, tgt_mag, data_range=max_val, reduction="mean").item()
+    """Mean SSIM across frames for two real [T, H, W] magnitude tensors."""
+    pred = prediction.unsqueeze(1)  # [T, 1, H, W]
+    tgt = target.unsqueeze(1)  # [T, 1, H, W]
+    max_val = max(pred.max(), tgt.max())
+    return ssim(pred, tgt, data_range=max_val, reduction="mean").item()
 
 
 def main():
     args = parse_args()
 
-    pt_files = sorted(glob(os.path.join(args.predictions_dir, "*.pt")))
-    if len(pt_files) == 0:
-        print(f"No .pt files found in {args.predictions_dir}")
+    predictions_dir = os.path.join(args.inference_dir, "predictions")
+    targets_dir = os.path.join(args.inference_dir, "targets")
+
+    pred_files = sorted(glob(os.path.join(predictions_dir, "*.npy")))
+    if len(pred_files) == 0:
+        print(f"No .npy files found in {predictions_dir}")
         return
 
-    print(f"Found {len(pt_files)} samples\n")
+    print(f"Found {len(pred_files)} samples\n")
 
-    output_dir = os.path.dirname(args.predictions_dir)
-    vis_dir = os.path.join(output_dir, "visualizations")
+    vis_dir = os.path.join(args.inference_dir, "visualizations")
     os.makedirs(vis_dir, exist_ok=True)
 
     results = []
 
-    for idx, pt_path in enumerate(pt_files):
-        sample = torch.load(pt_path, map_location="cpu")
-        prediction = sample["prediction"]  # [T, H, W] complex
-        target = sample["target"]  # [T, H, W] complex
+    for idx, pred_path in enumerate(pred_files):
+        name = os.path.basename(pred_path)
+        tgt_path = os.path.join(targets_dir, name)
+
+        prediction = torch.from_numpy(np.load(pred_path))  # [T, H, W] float
+        target = torch.from_numpy(np.load(tgt_path))  # [T, H, W] float
 
         nmse = compute_nmse(prediction, target)
         psnr = compute_psnr(prediction, target)
         ssim_val = compute_ssim(prediction, target)
 
-        name = os.path.basename(pt_path)
         results.append(
             {"file": name, "NMSE": nmse, "PSNR_dB": psnr, "SSIM": ssim_val}
         )
@@ -93,7 +97,6 @@ def main():
 
         # Visualization for first N samples
         if idx < args.n_vis:
-            input_img = sample["input"]  # [T, H, W] complex
             n_frames = prediction.shape[0]
             n_show = min(args.n_frames_vis, n_frames)
             frame_indices = torch.linspace(0, n_frames - 1, n_show).long()
@@ -103,18 +106,18 @@ def main():
                 axes = axes[:, None]
 
             error_map = (prediction - target).abs()
-            vmax = target.abs().max().item()
+            vmax = target.max().item()
             emax = error_map.max().item()
 
             for col, fi in enumerate(frame_indices):
                 axes[0, col].imshow(
-                    target[fi].abs().numpy(), cmap="gray", vmin=0, vmax=vmax
+                    target[fi].numpy(), cmap="gray", vmin=0, vmax=vmax
                 )
                 axes[0, col].set_title(f"Target f={fi.item()}", fontsize=9)
                 axes[0, col].axis("off")
 
                 axes[1, col].imshow(
-                    prediction[fi].abs().numpy(), cmap="gray", vmin=0, vmax=vmax
+                    prediction[fi].numpy(), cmap="gray", vmin=0, vmax=vmax
                 )
                 axes[1, col].set_title(f"Prediction f={fi.item()}", fontsize=9)
                 axes[1, col].axis("off")
@@ -156,7 +159,7 @@ def main():
     )
 
     # Save CSV
-    csv_path = os.path.join(output_dir, "metrics.csv")
+    csv_path = os.path.join(args.inference_dir, "metrics.csv")
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["file", "NMSE", "PSNR_dB", "SSIM"])
         writer.writeheader()
