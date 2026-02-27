@@ -276,6 +276,6 @@ def main(config):
 
 if __name__ == "__main__":
     config = parse_args()
-    print("Strating the script")
+    print("Starting the script")
     print(config)
     main(config)
