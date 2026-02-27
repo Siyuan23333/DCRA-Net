@@ -251,7 +251,7 @@ def main(config):
                     .cpu()
                 )
 
-            # Denormalize and save magnitude as .npy
+            # Denormalize and save complex images as .npy
             scale = target_delta.view(-1, 1, 1, 1, 1)  # [N, 1, 1, 1, 1]
             test_pred_denorm = test_pred * scale
             test_target_denorm = test_target * scale
@@ -260,11 +260,13 @@ def main(config):
                 dataset_idx = test_iter * config["batch_size"] + b_idx
                 fname = f"{test_dataset.filenames[dataset_idx]}.npy"
 
-                pred_mag = test_pred_denorm[b_idx, 0].abs().cpu().float().numpy()
-                np.save(os.path.join(predictions_dir, fname), pred_mag)
+                pred_complex = test_pred_denorm[b_idx, 0].cpu()  # [T, H, W] complex
+                pred_ri = torch.stack([pred_complex.real, pred_complex.imag], dim=1).float().numpy()  # [T, 2, H, W]
+                np.save(os.path.join(predictions_dir, fname), pred_ri)
 
-                tgt_mag = test_target_denorm[b_idx, 0].abs().cpu().float().numpy()
-                np.save(os.path.join(targets_dir, fname), tgt_mag)
+                tgt_complex = test_target_denorm[b_idx, 0].cpu()  # [T, H, W] complex
+                tgt_ri = torch.stack([tgt_complex.real, tgt_complex.imag], dim=1).float().numpy()  # [T, 2, H, W]
+                np.save(os.path.join(targets_dir, fname), tgt_ri)
 
     torch.save(
         {"test_losses": test_losses, "test_losses_masked": test_losses_masked},
